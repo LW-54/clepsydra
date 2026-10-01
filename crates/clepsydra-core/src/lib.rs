@@ -3,3 +3,4 @@
 pub mod config;
 pub mod arena;
 pub mod topology;
+pub mod ast;
