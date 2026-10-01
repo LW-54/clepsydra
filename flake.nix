@@ -1,5 +1,5 @@
 {
-  description = "Default Rust Devloppement Environment";
+  description = "clepsydra";
 
   inputs = {
     devenv-root = {
@@ -53,7 +53,7 @@
       flake = {
         templates.default = {
           path = ./.;
-          description = "Default Rust Devloppement Environment";
+          description = "clepsydra";
         };
       };
     };
