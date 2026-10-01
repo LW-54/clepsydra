@@ -49,17 +49,13 @@ fn arb_config(
 }
 
 #[test]
-fn schema_is_generated() {
+fn checked_in_schema_is_current() {
     let schema = schemars::schema_for!(Config);
-    let schema_json = serde_json::to_string_pretty(&schema);
-    assert!(schema_json.is_ok());
-    assert!(
-        std::fs::write(
-            "../../clepsydra.schema.json",
-            schema_json.unwrap_or_default()
-        )
-        .is_ok()
-    );
+    let generated = serde_json::to_string_pretty(&schema);
+    assert!(generated.is_ok());
+    let checked_in = std::fs::read_to_string("../../clepsydra.schema.json");
+    assert!(checked_in.is_ok());
+    assert_eq!(generated.ok(), checked_in.ok());
 }
 
 #[test]

@@ -116,7 +116,7 @@ impl<'brand> Topology<'brand> {
     }
 
     #[must_use]
-    pub const fn node_count(&self) -> usize {
+    pub fn node_count(&self) -> usize {
         self.graph.len()
     }
 

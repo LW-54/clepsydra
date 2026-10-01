@@ -1,21 +1,24 @@
 [package]
-name = "clepsydra-core"
-version.workspace = true
-edition.workspace = true
-repository.workspace = true
-description = "Core topology, symbolic evaluation, and arena data structures for Clepsydra"
-keywords = ["symbolic", "topology", "dsl"]
-categories = ["data-structures", "development-tools"]
+name                   = "clepsydra-core"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+repository.workspace   = true
+license.workspace      = true
+description            = "Core topology, symbolic evaluation, and arena data structures for Clepsydra"
+keywords               = ["symbolic", "topology", "dsl"]
+categories             = ["data-structures", "development-tools"]
+
 
 [dependencies]
-serde = { workspace = true }
+serde    = { workspace = true }
 schemars = { workspace = true }
 
 
 [dev-dependencies]
 serde_json = { workspace = true }
-toml = { workspace = true }
-proptest = { workspace = true }
+toml       = { workspace = true }
+proptest   = { workspace = true }
 
 [lints]
 workspace = true
