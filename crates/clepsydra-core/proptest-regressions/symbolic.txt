@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7593d7e4f8f9f97e5490d46471b7199c204b573282ba2f686412f1437957efd5 # shrinks to case = ValidCase { config: Config { default_bucket_target: None, default_flow_source: None, default_flow_target: None, nodes: {"n0": NodeConfig { capacity: None, target: None }}, flow: [] }, initial: [1] }
