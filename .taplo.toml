@@ -1,0 +1,7 @@
+[formatting]
+align_entries = true
+
+[[rule]]
+# This tells Taplo to apply the schema to any file named 'clepsydra.toml'
+include = ["clepsydra.toml"]
+schema = { path = "clepsydra.schema.json" }

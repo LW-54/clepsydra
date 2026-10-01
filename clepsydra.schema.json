@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Config",
+  "type": "object",
+  "required": [
+    "nodes"
+  ],
+  "properties": {
+    "default_bucket_target": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "default_flow_source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "default_flow_target": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "flow": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/FlowConfig"
+      }
+    },
+    "nodes": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/NodeConfig"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "FlowConfig": {
+      "type": "object",
+      "required": [
+        "volume"
+      ],
+      "properties": {
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "volume": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "NodeConfig": {
+      "type": "object",
+      "properties": {
+        "capacity": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

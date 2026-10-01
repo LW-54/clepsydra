@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7b2e5d46a1a11aadfa5ef3c03412c5d6cf8f468a8dc4a89384011bd84a2c79ef # shrinks to original = Config { default_target: None, default_directive_source: None, default_directive_target: None, nodes: {}, directive: [DirectiveConfig { source: None, target: None, amount: 9223372036854775808 }] }
