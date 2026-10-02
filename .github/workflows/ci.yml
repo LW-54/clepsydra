@@ -9,10 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.85.0
-          components: rustfmt, clippy
+      - uses: cachix/install-nix-action@v31
       - uses: actions/cache@v4
         with:
           path: |
@@ -21,11 +18,10 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
-      - run: cargo package -p clepsydra-core --no-verify
-      - run: cargo package -p clepsydra-lang --no-verify
+      - run: nix develop --no-pure-eval --command cargo fmt --all -- --check
+      - run: nix develop --no-pure-eval --command cargo clippy --workspace --all-targets -- -D warnings
+      - run: nix develop --no-pure-eval --command cargo test --workspace
+      - run: nix develop --no-pure-eval --command cargo package --workspace --no-verify
 
   nix:
     runs-on: ubuntu-latest

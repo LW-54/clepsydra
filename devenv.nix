@@ -23,7 +23,14 @@
 
   git-hooks.hooks = {
     rustfmt.enable = true;
-    clippy.enable = true;
+    clippy-strict = {
+      enable = true;
+      entry = "cargo clippy --workspace --all-targets -- -D warnings";
+      language = "system";
+      pass_filenames = false;
+      files = "\\.rs$";
+      stages = [ "pre-commit" ];
+    };
     taplo.enable = true;
     nixfmt.enable = true;
     trim-trailing-whitespace.enable = true;
