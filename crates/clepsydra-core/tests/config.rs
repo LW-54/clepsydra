@@ -66,6 +66,57 @@ fn rejects_invalid_toml_types_and_fields() {
     assert!(toml::from_str::<Config>("[nodes.a]\ndefault_bucket_target = 'b'").is_err());
 }
 
+#[test]
+fn accepts_banking_aliases_in_supported_formats() {
+    fn assert_banking_config<E: std::fmt::Display>(parsed: Result<Config, E>) {
+        assert!(parsed.is_ok(), "failed to parse banking aliases");
+        if let Ok(config) = parsed {
+            assert_eq!(config.default_bucket_target.as_deref(), Some("checking"));
+            assert_eq!(config.default_flow_source.as_deref(), Some("checking"));
+            assert_eq!(config.default_flow_target.as_deref(), Some("checking"));
+            assert!(config.nodes.contains_key("checking"));
+            assert_eq!(config.flow[0].volume, 3);
+        }
+    }
+
+    let toml_source = r#"
+        default_account_target = "checking"
+        default_transfer_source = "checking"
+        default_transfer_target = "checking"
+
+        [accounts.checking]
+        capacity = 10
+
+        [[transfers]]
+        source = "checking"
+        target = "checking"
+        amount = 3
+    "#;
+    let json_source = r#"{
+        "default_account_target": "checking",
+        "default_transfer_source": "checking",
+        "default_transfer_target": "checking",
+        "accounts": {"checking": {"capacity": 10}},
+        "transfers": [{"source": "checking", "target": "checking", "amount": 3}]
+    }"#;
+    let yaml_source = r"
+        default_account_target: checking
+        default_transfer_source: checking
+        default_transfer_target: checking
+        accounts:
+          checking:
+            capacity: 10
+        transfers:
+          - source: checking
+            target: checking
+            amount: 3
+    ";
+
+    assert_banking_config(toml::from_str(toml_source));
+    assert_banking_config(serde_json::from_str(json_source));
+    assert_banking_config(serde_yaml::from_str(yaml_source));
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1_000))]
 

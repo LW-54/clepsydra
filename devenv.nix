@@ -28,4 +28,8 @@
     nixfmt.enable = true;
     trim-trailing-whitespace.enable = true;
   };
+
+  tasks."schema:generate" = {
+    exec = "cargo run -p clepsydra-core --example generate-schema";
+  };
 }

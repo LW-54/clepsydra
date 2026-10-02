@@ -1,0 +1,18 @@
+[package]
+name                   = "clepsydra-lib"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+repository.workspace   = true
+license.workspace      = true
+readme                 = "../../README.md"
+description            = "Compile-time Rust evaluators for TOML-described flow systems"
+keywords               = ["symbolic", "topology", "dsl"]
+categories             = ["development-tools"]
+
+[dependencies]
+clepsydra-core   = { workspace = true }
+clepsydra-macros = { workspace = true }
+
+[lints]
+workspace = true

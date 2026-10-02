@@ -108,6 +108,40 @@ struct Input {
     config: Config,
 }
 
+fn parse_config(source: &str, format: Option<&str>) -> Result<Config> {
+    let parse_error = |error: String| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("Failed to parse configuration: {error}"),
+        )
+    };
+
+    match format {
+        Some("toml") => toml::from_str(source).map_err(|error| parse_error(error.to_string())),
+        Some("json") => {
+            serde_json::from_str(source).map_err(|error| parse_error(error.to_string()))
+        }
+        Some("yaml" | "yml") => {
+            serde_yaml::from_str(source).map_err(|error| parse_error(error.to_string()))
+        }
+        Some(extension) => Err(parse_error(format!(
+            "unsupported file extension '.{extension}'; use .toml, .json, .yaml, or .yml"
+        ))),
+        None => toml::from_str::<Config>(source).map_or_else(
+            |_| {
+                serde_json::from_str::<Config>(source).map_or_else(
+                    |_| {
+                        serde_yaml::from_str::<Config>(source)
+                            .map_err(|error| parse_error(error.to_string()))
+                    },
+                    Ok,
+                )
+            },
+            Ok,
+        ),
+    }
+}
+
 impl Parse for Input {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut name = format_ident!("Clepsydra");
@@ -125,14 +159,22 @@ impl Parse for Input {
             let lit: LitStr = input.parse()?;
             source_str = lit.value();
         } else {
-            return Err(input.error("Expected a struct identifier or a TOML string literal"));
+            return Err(
+                input.error("Expected a struct identifier or a TOML, JSON, or YAML string literal")
+            );
         }
 
         let trimmed = source_str.trim();
-        let is_toml_path = std::path::Path::new(trimmed)
+        let path = std::path::Path::new(trimmed);
+        let extension = path
             .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"));
-        let config_str = if is_toml_path {
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase);
+        let is_config_path = !trimmed.contains(['\n', '\r'])
+            && extension
+                .as_deref()
+                .is_some_and(|extension| matches!(extension, "toml" | "json" | "yaml" | "yml"));
+        let config_str = if is_config_path {
             let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
             let path = std::path::Path::new(&manifest_dir).join(trimmed);
             fs::read_to_string(&path).map_err(|e| {
@@ -145,12 +187,8 @@ impl Parse for Input {
             trimmed.to_string()
         };
 
-        let config = toml::from_str(&config_str).map_err(|e| {
-            syn::Error::new(
-                proc_macro2::Span::call_site(),
-                format!("Failed to parse TOML: {e}"),
-            )
-        })?;
+        let format = is_config_path.then_some(extension).flatten();
+        let config = parse_config(&config_str, format.as_deref())?;
 
         Ok(Self { name, config })
     }

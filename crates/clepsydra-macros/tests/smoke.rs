@@ -46,3 +46,23 @@ fn named_macro_exposes_metadata_and_evaluation() {
         [("checking", 4), ("sink", 3)]
     );
 }
+
+#[test]
+fn closure_accepts_json_and_yaml() {
+    let json = clepsydra_closure!(
+        r#"{
+        "nodes": {"sink": {"capacity": null, "target": null}}
+    }"#
+    );
+    let yaml = clepsydra_closure!(
+        r#"
+        nodes:
+          sink:
+            capacity: null
+            target: null
+    "#
+    );
+
+    assert_eq!(json([("sink", 4)]), [("sink", 4)]);
+    assert_eq!(yaml([("sink", 4)]), [("sink", 4)]);
+}
