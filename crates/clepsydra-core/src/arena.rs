@@ -93,6 +93,7 @@ impl<'brand, T> Arena<'brand, T> {
         self.data.is_empty()
     }
 
+    #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (ArenaId<'brand, T>, &T)> {
         self.data.iter().enumerate().map(|(i, item)| {
             let id = ArenaId {
