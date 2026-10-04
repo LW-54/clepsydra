@@ -116,6 +116,25 @@ impl Network {
 
 `NAMES` follows topology construction order. Input names should identify each configured node exactly once. Configuration errors are reported during compilation.
 
+For runtime configuration or as a fallback when generated code is unavailable,
+the facade exposes a checked evaluator:
+
+```rust
+use clepsydra_lib::{evaluate_config, RuntimeError};
+
+let config: clepsydra_lib::clepsydra_core::config::Config = toml::from_str(
+    "[nodes.sink]\n[nodes.checking]\ncapacity = 10\ntarget = 'sink'",
+).unwrap();
+let next: Result<_, RuntimeError> =
+    evaluate_config(&config, &[("checking", 7), ("sink", 0)]);
+assert_eq!(next.unwrap()[0], ("checking".to_owned(), 7));
+```
+
+`evaluate_config` returns node names in deterministic name order and rejects
+unknown, duplicate, or missing inputs. `evaluate_config_array` and
+`RuntimeEvaluator::evaluate_array` preserve fixed-array ordering for callers
+that use the generated evaluator shape.
+
 The current API is experimental and may change.
 
 ## License
