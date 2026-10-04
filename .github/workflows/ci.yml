@@ -21,8 +21,7 @@ jobs:
       - run: nix develop --no-pure-eval --command cargo fmt --all -- --check
       - run: nix develop --no-pure-eval --command cargo clippy --workspace --all-targets -- -D warnings
       - run: nix develop --no-pure-eval --command cargo test --workspace
-      - run: nix develop --no-pure-eval --command cargo package -p clepsydra-core --no-verify
-      - run: nix develop --no-pure-eval --command cargo package -p clepsydra-lib --no-verify
+      - run: nix develop --no-pure-eval --command cargo package --workspace --no-verify
 
   nix:
     runs-on: ubuntu-latest
