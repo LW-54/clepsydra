@@ -1,13 +1,27 @@
 use crate::arena::{Arena, ArenaId};
 use crate::config::Config;
+pub use crate::errors::TopologyError;
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 
 pub type NodeId<'brand> = ArenaId<'brand, Node<'brand>>;
 pub type DAG<'brand> = Arena<'brand, Node<'brand>>;
 
 #[derive(Debug)]
-pub enum Node<'brand> {
+pub struct Node<'brand> {
+    name: Arc<str>,
+    pub behavior: Behavior<'brand>,
+}
+
+impl Node<'_> {
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+#[derive(Debug)]
+pub enum Behavior<'brand> {
     Sink,
     Bucket {
         capacity: u64,
@@ -35,48 +49,8 @@ pub struct Topology<'brand> {
     graph: DAG<'brand>,
     flows: Vec<Flow<'brand>>,
 
-    name_to_id: HashMap<String, NodeId<'brand>>,
-    id_to_name: HashMap<NodeId<'brand>, String>,
+    name_to_id: HashMap<Arc<str>, NodeId<'brand>>,
 }
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum TopologyError {
-    MissingCapacity { node: String },
-    MissingTarget { node: String },
-    UnresolvedTargets { nodes: Vec<String> },
-    MissingFlowSource { flow: usize },
-    MissingFlowTarget { flow: usize },
-    UnknownFlowSource { flow: usize, node: String },
-    UnknownFlowTarget { flow: usize, node: String },
-}
-
-impl Display for TopologyError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MissingCapacity { node } => {
-                write!(formatter, "Node '{node}' has a target but no capacity")
-            }
-            Self::MissingTarget { node } => write!(
-                formatter,
-                "Node '{node}' has capacity but no target (and no default_target exists)"
-            ),
-            Self::UnresolvedTargets { nodes } => write!(
-                formatter,
-                "Cycle detected or missing target node involving: {nodes:?}"
-            ),
-            Self::MissingFlowSource { .. } => write!(formatter, "Missing Flow source"),
-            Self::MissingFlowTarget { .. } => write!(formatter, "Missing Flow target"),
-            Self::UnknownFlowSource { node, .. } => {
-                write!(formatter, "Flow source '{node}' not found")
-            }
-            Self::UnknownFlowTarget { node, .. } => {
-                write!(formatter, "Flow target '{node}' not found")
-            }
-        }
-    }
-}
-
-impl std::error::Error for TopologyError {}
 
 #[macro_export]
 macro_rules! new_topology {
@@ -103,16 +77,8 @@ impl<'brand> Topology<'brand> {
     }
 
     #[must_use]
-    pub fn node_name(&self, id: NodeId<'brand>) -> Option<&str> {
-        self.id_to_name.get(&id).map(String::as_str)
-    }
-
-    pub(crate) const fn name_to_id_map(&self) -> &HashMap<String, NodeId<'brand>> {
-        &self.name_to_id
-    }
-
-    pub(crate) const fn id_to_name_map(&self) -> &HashMap<NodeId<'brand>, String> {
-        &self.id_to_name
+    pub fn node_name(&self, id: NodeId<'brand>) -> &str {
+        self.graph.get(id).name()
     }
 
     #[must_use]
@@ -126,7 +92,6 @@ impl<'brand> Topology<'brand> {
     /// node, or the node targets cannot be resolved.
     pub fn __new(config: &Config, mut graph: DAG<'brand>) -> Result<Self, TopologyError> {
         let mut name_to_id = HashMap::new();
-        let mut id_to_name = HashMap::new();
 
         let mut unprocessed: Vec<(&String, &crate::config::NodeConfig)> =
             config.nodes.iter().collect();
@@ -148,26 +113,33 @@ impl<'brand> Topology<'brand> {
                         return Err(TopologyError::MissingTarget { node: name.clone() });
                     }
                     (None, None, _) => {
-                        let id = graph.push(Node::Sink);
-                        name_to_id.insert(name.clone(), id);
-                        id_to_name.insert(id, name.clone());
+                        let node_name: Arc<str> = name.as_str().into();
+                        let id = graph.push(Node {
+                            name: Arc::clone(&node_name),
+                            behavior: Behavior::Sink,
+                        });
+                        name_to_id.insert(node_name, id);
                         resolved_any = true;
                     }
-                    (Some(t), Some(cap), _) | (None, Some(cap), Some(t)) => match name_to_id.get(t)
-                    {
-                        Some(&target_id) => {
-                            let id = graph.push(Node::Bucket {
-                                capacity: *cap,
-                                target: target_id,
-                            });
-                            name_to_id.insert(name.clone(), id);
-                            id_to_name.insert(id, name.clone());
-                            resolved_any = true;
+                    (Some(t), Some(cap), _) | (None, Some(cap), Some(t)) => {
+                        match name_to_id.get(t.as_str()) {
+                            Some(&target_id) => {
+                                let node_name: Arc<str> = name.as_str().into();
+                                let id = graph.push(Node {
+                                    name: Arc::clone(&node_name),
+                                    behavior: Behavior::Bucket {
+                                        capacity: *cap,
+                                        target: target_id,
+                                    },
+                                });
+                                name_to_id.insert(node_name, id);
+                                resolved_any = true;
+                            }
+                            None => {
+                                next_unprocessed.push((name, config_node));
+                            }
                         }
-                        None => {
-                            next_unprocessed.push((name, config_node));
-                        }
-                    },
+                    }
                 }
             }
 
@@ -196,21 +168,19 @@ impl<'brand> Topology<'brand> {
                 .or(config.default_flow_target.as_ref())
                 .ok_or(TopologyError::MissingFlowTarget { flow })?;
 
-            let source =
-                *name_to_id
-                    .get(src_str)
-                    .ok_or_else(|| TopologyError::UnknownFlowSource {
-                        flow,
-                        node: src_str.clone(),
-                    })?;
+            let source = *name_to_id.get(src_str.as_str()).ok_or_else(|| {
+                TopologyError::UnknownFlowSource {
+                    flow,
+                    node: src_str.clone(),
+                }
+            })?;
 
-            let target =
-                *name_to_id
-                    .get(tgt_str)
-                    .ok_or_else(|| TopologyError::UnknownFlowTarget {
-                        flow,
-                        node: tgt_str.clone(),
-                    })?;
+            let target = *name_to_id.get(tgt_str.as_str()).ok_or_else(|| {
+                TopologyError::UnknownFlowTarget {
+                    flow,
+                    node: tgt_str.clone(),
+                }
+            })?;
 
             flows.push(Flow {
                 source,
@@ -223,7 +193,6 @@ impl<'brand> Topology<'brand> {
             graph,
             flows,
             name_to_id,
-            id_to_name,
         })
     }
 }

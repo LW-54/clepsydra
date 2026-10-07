@@ -35,19 +35,19 @@ The complete schema is available in [`clepsydra.schema.json`](clepsydra.schema.j
 
 ```rust
 // Default file: clepsydra.toml.
-let evaluate = clepsydra_closure!();
+let evaluate = clepsydra_eval!();
 
 // File or inline configuration.
-let evaluate = clepsydra_closure!("config/ledger.yaml");
-let evaluate = clepsydra_closure!(r#"[nodes.sink]"#);
+let evaluate = clepsydra_eval!("config/ledger.yaml");
+let evaluate = clepsydra_eval!(r#"[nodes.sink]"#);
 ```
 
 ### Evaluators
 
 ```rust
-use clepsydra_lib::clepsydra_closure;
+use clepsydra_lib::clepsydra_eval;
 
-let evaluate = clepsydra_closure!(r#"
+let evaluate = clepsydra_eval!(r#"
     [nodes.sink]
 
     [nodes.checking]
@@ -65,38 +65,57 @@ let next = evaluate([
     ("sink", 0),
 ]);
 
-assert_eq!(next, [
+assert_eq!(next, Ok([
     ("checking", 4),
     ("sink", 3),
-]);
+]));
 ```
 
-The named macro generates an evaluator and topology metadata:
+`clepsydra_eval!` accepts names in any order and preserves that order in its
+result. Names are checked at runtime, so unknown or duplicate names return an
+`EvalError`. For dynamic inputs, `clepsydra_vec_eval!` accepts a borrowed slice
+and returns a `Vec`; `clepsydra_map_eval!` accepts and returns a `HashMap`.
+
+The named macro generates both a canonical positional evaluator and the named
+adapter:
 
 ```rust
-use clepsydra_lib::clepsydra;
+use clepsydra_lib::{clepsydra, clepsydra_map_eval, clepsydra_vec_eval};
 
 clepsydra!(Network, "clepsydra.toml");
 
-let next = Network::evaluate([
+let next = Network::eval([
     ("checking", 7),
     ("sink", 0),
 ]);
+
+let canonical = Network::ordered_eval([0, 7]);
+
+let balances = std::collections::HashMap::from([
+    ("checking".to_owned(), 7),
+    ("sink".to_owned(), 0),
+]);
+let next_by_name = Network::map_eval(balances)?;
+let next_by_vec = clepsydra_vec_eval!("clepsydra.toml")(&[
+    ("checking", 7),
+    ("sink", 0),
+])?;
 ```
 
-`clepsydra!` also accepts no configuration argument or inline configuration. With no identifier, it generates a struct named `Clepsydra`:
+`clepsydra!` also accepts no configuration argument or inline configuration. With no identifier, it generates a struct named `Evaluator`:
 
 ```rust
-clepsydra!();
+clepsydra!(); // generates `Evaluator`
 clepsydra!(Network, r#"[nodes.sink]"#);
 ```
 
-The closure macro expands to a value with this shape, where `N` is the number of configured nodes:
+The evaluation macro expands to a named adapter with this shape, where `N` is
+the number of configured nodes:
 
 ```rust
-FnOnce(
-    [(&'static str, u64); N]
-) -> [(&'static str, u64); N]
+for<'state> fn(
+    [(&'state str, u64); N]
+) -> Result<[(&'state str, u64); N], EvalError>
 ```
 
 The named macro generates a unit struct with this interface:
@@ -108,32 +127,79 @@ impl Network {
     pub const NODE_COUNT: usize = N;
     pub const NAMES: [&'static str; N] = /* topology names */;
 
-    pub fn evaluate(
-        state: [(&'static str, u64); N],
-    ) -> [(&'static str, u64); N];
+    pub fn ordered_eval(state: [u64; N]) -> [u64; N];
+
+    pub fn eval<'state>(
+        state: [(&'state str, u64); N],
+    ) -> Result<[(&'state str, u64); N], EvalError>;
+
+    pub fn vec_eval<'state>(
+        state: &'state [(&'state str, u64)],
+    ) -> Result<Vec<(&'state str, u64)>, EvalError>;
+
+    pub fn map_eval(
+        state: std::collections::HashMap<String, u64>,
+    ) -> Result<std::collections::HashMap<String, u64>, EvalError>;
 }
 ```
 
-`NAMES` follows topology construction order. Input names should identify each configured node exactly once. Configuration errors are reported during compilation.
+The vector and map macro forms are:
+
+```rust
+let vector_eval = clepsydra_vec_eval!("clepsydra.toml");
+let next = vector_eval(&[("checking", 7), ("sink", 0)])?;
+
+let map_eval = clepsydra_map_eval!("clepsydra.toml");
+let next = map_eval(std::collections::HashMap::from([
+    ("checking".to_owned(), 7),
+    ("sink".to_owned(), 0),
+]))?;
+```
+
+`NAMES` follows topology construction order, which is also the order expected by
+`ordered_eval`. The named adapter maps into that order, evaluates, and restores
+the caller's original tuple order. Input names must identify each configured
+node exactly once. Configuration errors are reported during compilation.
+`map_eval` is the owned, unordered boundary form: it accepts a `HashMap`,
+normalizes it through the same generated computation, and returns a `HashMap`.
 
 For runtime configuration or as a fallback when generated code is unavailable,
 the facade exposes a checked evaluator:
 
 ```rust
-use clepsydra_lib::{evaluate_config, RuntimeError};
+use clepsydra_lib::{EvalError, clepsydra};
 
 let config: clepsydra_lib::clepsydra_core::config::Config = toml::from_str(
     "[nodes.sink]\n[nodes.checking]\ncapacity = 10\ntarget = 'sink'",
 ).unwrap();
-let next: Result<_, RuntimeError> =
-    evaluate_config(&config, &[("checking", 7), ("sink", 0)]);
-assert_eq!(next.unwrap()[0], ("checking".to_owned(), 7));
+let next: Result<_, EvalError> = clepsydra(&config)
+    .and_then(|evaluator| evaluator.eval([("checking", 7), ("sink", 0)]));
+assert_eq!(next.unwrap(), [("checking", 4), ("sink", 3)]);
 ```
 
-`evaluate_config` returns node names in deterministic name order and rejects
-unknown, duplicate, or missing inputs. `evaluate_config_array` and
-`RuntimeEvaluator::evaluate_array` preserve fixed-array ordering for callers
-that use the generated evaluator shape.
+`clepsydra` returns an owned runtime evaluator with `eval`, `vec_eval`,
+`ordered_eval`, and `map_eval` methods. Runtime `ordered_eval` is fallible
+because the topology size is known only after configuration is parsed. Its
+`node_count()` and `names()` methods provide the runtime equivalents of
+`NODE_COUNT` and `NAMES`.
+
+The standalone runtime constructors are:
+
+```rust
+let named = clepsydra_eval(&config)?;
+let next = named(&[("checking", 7), ("sink", 0)])?;
+
+let vector = clepsydra_vec_eval(&config)?;
+let next = vector(&[("checking", 7), ("sink", 0)])?;
+
+let map = clepsydra_map_eval(&config)?;
+let next = map(std::collections::HashMap::from([
+    ("checking".to_owned(), 7),
+    ("sink".to_owned(), 0),
+]))?;
+```
+Runtime configuration errors are returned as `EvalError` because topology
+construction happens at runtime.
 
 The current API is experimental and may change.
 

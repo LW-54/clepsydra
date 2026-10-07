@@ -1,4 +1,5 @@
 use clepsydra_core::config::{Config, FlowConfig, NodeConfig};
+use clepsydra_core::errors::ConfigError;
 use proptest::collection::{btree_map, vec};
 use proptest::prelude::*;
 
@@ -115,6 +116,23 @@ fn accepts_banking_aliases_in_supported_formats() {
     assert_banking_config(toml::from_str(toml_source));
     assert_banking_config(serde_json::from_str(json_source));
     assert_banking_config(serde_yaml::from_str(yaml_source));
+}
+
+#[test]
+fn config_from_input_accepts_supported_inline_formats() {
+    let toml = "[nodes.sink]";
+    let json = r#"{"nodes":{"sink":{"capacity":null,"target":null}}}"#;
+    let yaml = "nodes:\n  sink:\n    capacity: null\n    target: null\n";
+
+    assert!(Config::from_input(toml).is_ok());
+    assert!(Config::from_input(json).is_ok());
+    assert!(Config::from_input(yaml).is_ok());
+}
+
+#[test]
+fn config_from_input_reports_parse_errors() {
+    let result = Config::from_input("not valid config content");
+    assert!(matches!(result, Err(ConfigError::Parse { .. })));
 }
 
 proptest! {

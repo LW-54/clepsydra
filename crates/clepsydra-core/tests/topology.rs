@@ -1,6 +1,6 @@
 use clepsydra_core::config::{Config, NodeConfig};
 use clepsydra_core::new_graph;
-use clepsydra_core::topology::{Node, Topology};
+use clepsydra_core::topology::{Behavior, Topology};
 use proptest::collection::{btree_map, vec};
 use proptest::prelude::*;
 
@@ -35,10 +35,7 @@ fn builds_valid_linear_topology() {
                 topology.node_id("checking"),
                 Some(topology.flows()[0].source)
             );
-            assert_eq!(
-                topology.node_name(topology.flows()[0].target),
-                Some("savings")
-            );
+            assert_eq!(topology.node_name(topology.flows()[0].target), "savings");
         }
     }
 }
@@ -126,8 +123,8 @@ proptest! {
         let second = Topology::__new(&config, new_graph!());
         match (first, second) {
             (Ok(first), Ok(second)) => {
-                let mut first_names: Vec<_> = first.graph().iter().filter_map(|(id, _)| first.node_name(id)).collect();
-                let mut second_names: Vec<_> = second.graph().iter().filter_map(|(id, _)| second.node_name(id)).collect();
+                let mut first_names: Vec<_> = first.graph().iter().map(|(id, _)| first.node_name(id)).collect();
+                let mut second_names: Vec<_> = second.graph().iter().map(|(id, _)| second.node_name(id)).collect();
                 first_names.sort_unstable();
                 second_names.sort_unstable();
                 prop_assert_eq!(first_names, second_names);
@@ -142,10 +139,9 @@ proptest! {
         if let Ok(topology) = Topology::__new(&config, new_graph!()) {
             let nodes: Vec<_> = topology.graph().iter().collect();
             prop_assert_eq!(nodes.len(), topology.node_count());
-            for (id, node) in nodes {
-                prop_assert!(topology.node_name(id).is_some());
-                if let Node::Bucket { target, .. } = node {
-                    prop_assert!(topology.node_name(*target).is_some());
+            for (_id, node) in nodes {
+                if let Behavior::Bucket { target, .. } = &node.behavior {
+                    prop_assert_eq!(topology.node_name(*target), topology.graph().get(*target).name());
                 }
             }
         }

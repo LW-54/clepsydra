@@ -1,11 +1,11 @@
-use clepsydra_lib::clepsydra_closure;
+use clepsydra_lib::clepsydra;
 use clepsydra_lib::clepsydra_core::config::{Config, NodeConfig};
-use clepsydra_lib::evaluate_config;
+use clepsydra_lib::clepsydra_eval;
 use std::collections::BTreeMap;
 
 #[test]
-fn facade_reexports_closure_macro() {
-    let evaluate = clepsydra_closure!(
+fn facade_reexports_eval_macro() {
+    let evaluate = clepsydra_eval!(
         r#"
         [nodes.sink]
 
@@ -22,7 +22,7 @@ fn facade_reexports_closure_macro() {
 
     assert_eq!(
         evaluate([("checking", 7), ("sink", 0)]),
-        [("checking", 4), ("sink", 3)]
+        Ok([("checking", 4), ("sink", 3)])
     );
 }
 
@@ -45,7 +45,7 @@ fn facade_reexports_runtime_evaluator() {
     };
 
     assert_eq!(
-        evaluate_config(&config, &[("sink", 4)]),
-        Ok(vec![("sink".to_owned(), 4)])
+        clepsydra(&config).and_then(|evaluator| evaluator.eval([("sink", 4)])),
+        Ok([("sink", 4)])
     );
 }

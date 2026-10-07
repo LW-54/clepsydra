@@ -2,7 +2,7 @@ use clepsydra_core::ast::{AST, Expr, ExprId};
 use clepsydra_core::config::{Config, FlowConfig, NodeConfig};
 use clepsydra_core::new_graph;
 use clepsydra_core::symbolic::SymbolicState;
-use clepsydra_core::topology::{Node, NodeId, Topology};
+use clepsydra_core::topology::{Behavior, NodeId, Topology};
 use proptest::prelude::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -68,6 +68,7 @@ fn arb_valid_case() -> impl Strategy<Value = ValidCase> {
 
 fn evaluate<'brand>(
     symbolic: &SymbolicState<'brand>,
+    topology: &Topology<'brand>,
     initial: &[u64],
 ) -> Option<HashMap<NodeId<'brand>, u64>> {
     fn evaluate_expr<'brand>(
@@ -93,7 +94,7 @@ fn evaluate<'brand>(
     }
 
     let mut names: Vec<_> = symbolic.node_exprs().keys().copied().collect();
-    names.sort_by(|left, right| symbolic.node_name(*left).cmp(&symbolic.node_name(*right)));
+    names.sort_by(|left, right| topology.node_name(*left).cmp(topology.node_name(*right)));
     let node_values: HashMap<_, _> = names.into_iter().zip(initial.iter().copied()).collect();
     let mut expressions = HashMap::new();
 
@@ -172,7 +173,7 @@ proptest! {
         let Ok(topology) = topology else { return Ok(()) };
         let symbolic = SymbolicState::new(&topology);
         assert_symbolic_invariants(&symbolic, &topology);
-        let final_values = evaluate(&symbolic, &case.initial);
+        let final_values = evaluate(&symbolic, &topology, &case.initial);
         prop_assert!(final_values.is_some());
         let Some(final_values) = final_values else { return Ok(()) };
 
@@ -189,12 +190,12 @@ proptest! {
         let Ok(topology) = topology else { return Ok(()) };
         let symbolic = SymbolicState::new(&topology);
         assert_symbolic_invariants(&symbolic, &topology);
-        let final_values = evaluate(&symbolic, &case.initial);
+        let final_values = evaluate(&symbolic, &topology, &case.initial);
         prop_assert!(final_values.is_some());
         let Some(final_values) = final_values else { return Ok(()) };
 
         for (id, node) in topology.graph().iter() {
-            if let Node::Bucket { capacity, .. } = node {
+            if let Behavior::Bucket { capacity, .. } = &node.behavior {
                 let Some(value) = final_values.get(&id) else {
                     prop_assert!(false, "missing final value for generated node");
                     return Ok(());

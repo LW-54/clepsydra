@@ -1,11 +1,9 @@
 use clepsydra_core::config::{Config, FlowConfig, NodeConfig};
-use clepsydra_core::new_graph;
+use clepsydra_core::errors::EvalError;
 use clepsydra_core::runtime::{
-    RuntimeError, RuntimeEvaluator, evaluate_config, evaluate_config_array,
+    RuntimeEvaluator, clepsydra, clepsydra_eval, clepsydra_map_eval, clepsydra_vec_eval,
 };
-use clepsydra_core::symbolic::SymbolicState;
-use clepsydra_core::topology::Topology;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 fn config() -> Config {
     let mut nodes = BTreeMap::new();
@@ -38,17 +36,98 @@ fn config() -> Config {
 
 #[test]
 fn evaluates_dynamic_state_in_name_order() {
-    let result = evaluate_config(&config(), &[("sink", 0), ("checking", 7)]);
-    assert_eq!(
-        result,
-        Ok(vec![("checking".to_owned(), 4), ("sink".to_owned(), 3)])
-    );
+    let result =
+        clepsydra(&config()).and_then(|evaluator| evaluator.eval([("sink", 0), ("checking", 7)]));
+    assert_eq!(result, Ok([("sink", 3), ("checking", 4)]));
 }
 
 #[test]
 fn evaluates_fixed_array_in_caller_order() {
-    let result = evaluate_config_array(&config(), [("sink", 0), ("checking", 7)]);
-    assert_eq!(result, Ok([("sink", 3), ("checking", 4)]));
+    let result = clepsydra(&config()).and_then(|evaluator| evaluator.ordered_eval([0, 7]));
+    assert_eq!(result, Ok([3, 4]));
+}
+
+#[test]
+fn config_helpers_match_runtime_evaluator_shapes() {
+    assert_eq!(
+        clepsydra(&config()).and_then(|evaluator| evaluator.eval([("checking", 7), ("sink", 0)])),
+        Ok([("checking", 4), ("sink", 3)])
+    );
+    assert_eq!(
+        clepsydra(&config()).and_then(|evaluator| {
+            evaluator.map_eval(HashMap::from([
+                ("checking".to_owned(), 7),
+                ("sink".to_owned(), 0),
+            ]))
+        }),
+        Ok(HashMap::from([
+            ("checking".to_owned(), 4),
+            ("sink".to_owned(), 3)
+        ]))
+    );
+}
+
+#[test]
+fn evaluates_with_macro_shaped_runtime_api() {
+    let runtime_config = config();
+    let evaluator = clepsydra(&runtime_config);
+
+    assert_eq!(
+        evaluator
+            .as_ref()
+            .map(|evaluator| evaluator.ordered_eval([0, 7])),
+        Ok(Ok([3, 4]))
+    );
+    assert_eq!(
+        evaluator
+            .as_ref()
+            .map(|evaluator| evaluator.eval([("checking", 7), ("sink", 0)])),
+        Ok(Ok([("checking", 4), ("sink", 3)]))
+    );
+
+    let state = HashMap::from([("checking".to_owned(), 7), ("sink".to_owned(), 0)]);
+    let expected = HashMap::from([("checking".to_owned(), 4), ("sink".to_owned(), 3)]);
+    assert_eq!(
+        evaluator.map(|evaluator| evaluator.map_eval(state)),
+        Ok(Ok(expected))
+    );
+}
+
+#[test]
+fn runtime_constructor_variants_share_the_same_struct_api() {
+    let evaluator = clepsydra(&config());
+    assert_eq!(evaluator.as_ref().map(RuntimeEvaluator::node_count), Ok(2));
+    assert_eq!(
+        evaluator.as_ref().map(RuntimeEvaluator::names),
+        Ok(["sink".to_owned(), "checking".to_owned()].as_slice())
+    );
+    let Ok(named) = clepsydra_eval(&config()) else {
+        return;
+    };
+    assert_eq!(
+        named(&[("checking", 7), ("sink", 0)]),
+        Ok(vec![("checking", 4), ("sink", 3)])
+    );
+    let Ok(vec_named) = clepsydra_vec_eval(&config()) else {
+        return;
+    };
+    assert_eq!(
+        vec_named(&[("checking", 7), ("sink", 0)]),
+        Ok(vec![("checking", 4), ("sink", 3)])
+    );
+    let Ok(dictionary) = clepsydra_map_eval(&config()) else {
+        return;
+    };
+    assert_eq!(
+        dictionary(HashMap::from([
+            ("checking".to_owned(), 7),
+            ("sink".to_owned(), 0),
+        ])),
+        Ok(HashMap::from([
+            ("checking".to_owned(), 4),
+            ("sink".to_owned(), 3),
+        ]))
+    );
 }
 
 #[test]
@@ -60,38 +139,35 @@ fn propagates_bucket_overflow_to_sink() {
         volume: 5,
     }];
 
-    let result = evaluate_config(&overflow_config, &[("checking", 9), ("sink", 5)]);
-    assert_eq!(
-        result,
-        Ok(vec![("checking".to_owned(), 10), ("sink".to_owned(), 4)])
-    );
+    let result = clepsydra(&overflow_config)
+        .and_then(|evaluator| evaluator.eval([("checking", 9), ("sink", 5)]));
+    assert_eq!(result, Ok([("checking", 10), ("sink", 4)]));
 }
 
 #[test]
 fn rejects_invalid_runtime_inputs() {
-    let graph = new_graph!();
-    let topology = Topology::__new(&config(), graph);
-    assert!(topology.is_ok());
-    let Ok(topology) = topology else { return };
-    let symbolic = SymbolicState::new(&topology);
-    let evaluator = RuntimeEvaluator::new(&symbolic);
+    let evaluator = clepsydra(&config());
 
     assert_eq!(
-        evaluator.evaluate(&[("checking", 7)]),
-        Err(RuntimeError::InvalidInputCount {
+        evaluator
+            .as_ref()
+            .map(|evaluator| evaluator.eval([("checking", 7)])),
+        Ok(Err(EvalError::InvalidInputCount {
             expected: 2,
             actual: 1,
-        })
+        }))
     );
     assert_eq!(
-        evaluator.evaluate(&[("checking", 7), ("checking", 0)]),
-        Err(RuntimeError::DuplicateInput {
+        clepsydra(&config())
+            .and_then(|evaluator| evaluator.eval([("checking", 7), ("checking", 0)])),
+        Err(EvalError::DuplicateInput {
             name: "checking".to_owned(),
         })
     );
     assert_eq!(
-        evaluator.evaluate(&[("checking", 7), ("unknown", 0)]),
-        Err(RuntimeError::UnknownInput {
+        clepsydra(&config())
+            .and_then(|evaluator| evaluator.eval([("checking", 7), ("unknown", 0)])),
+        Err(EvalError::UnknownInput {
             name: "unknown".to_owned(),
         })
     );
@@ -99,10 +175,10 @@ fn rejects_invalid_runtime_inputs() {
 
 #[test]
 fn rejects_fixed_array_with_wrong_node_count() {
-    let result = evaluate_config_array(&config(), [("checking", 7)]);
+    let result = clepsydra(&config()).and_then(|evaluator| evaluator.ordered_eval([7]));
     assert_eq!(
         result,
-        Err(RuntimeError::InvalidInputCount {
+        Err(EvalError::InvalidInputCount {
             expected: 2,
             actual: 1,
         })
@@ -115,10 +191,10 @@ fn reports_topology_errors_from_config_helper() {
     if let Some(node) = invalid.nodes.get_mut("checking") {
         node.target = None;
     }
-    let result = evaluate_config(&invalid, &[("checking", 0), ("sink", 0)]);
+    let result = clepsydra(&invalid).map(|_| ());
     assert_eq!(
         result,
-        Err(RuntimeError::Topology(
+        Err(EvalError::Topology(
             clepsydra_core::topology::TopologyError::MissingTarget {
                 node: "checking".to_owned(),
             }
